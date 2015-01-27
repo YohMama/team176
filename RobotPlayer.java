@@ -16,11 +16,19 @@ public class RobotPlayer {
 	
 	public static void run(RobotController owl) {
 		me = owl;
-		rand = new Random(me.getID());
+		int id = me.getID();
+		rand = new Random(id);
 		MapLocation badHQ = me.senseEnemyHQLocation();
 		MapLocation goodHQ = me.senseHQLocation();
-//		MapLocation[] badTowers = me.senseEnemyTowerLocations();
-//		MapLocation[] goodTowers = me.senseTowerLocations();
+		MapLocation[] badTowers = me.senseEnemyTowerLocations();
+		MapLocation[] goodTowers = me.senseTowerLocations();
+		try {
+			sortTowers(goodTowers, goodHQ);
+			sortTowers(badTowers, badHQ);
+		} catch (Exception e) {
+			System.out.println("Tower sorting exception");
+			e.printStackTrace();
+		}
 		atkRange = me.getType().attackRadiusSquared;
 		sightRange = me.getType().sensorRadiusSquared;
 		goodGuys = me.getTeam();
@@ -76,7 +84,7 @@ public class RobotPlayer {
 			if (me.getType() == RobotType.BEAVER) {
 				try {
 					tryBuild(goodHQ.directionTo(badHQ), goodHQ);
-					randMove(directions[rand.nextInt(8)]);
+					beaverMove(id, goodHQ.directionTo(badHQ), goodHQ, rand);
 					nearATK();
 					tryMine();
 //					HQMove(badHQ);
@@ -88,7 +96,7 @@ public class RobotPlayer {
 			
 			if (me.getType() == RobotType.MINER) {
 				try {
-					mine(goodHQ.directionTo(badHQ), rand.nextInt(2));
+					mine(id, goodHQ.directionTo(badHQ), id % 2, goodHQ);
 				} catch (Exception e) {
 					System.out.println("MINER Exception");
 					e.printStackTrace();
@@ -98,7 +106,12 @@ public class RobotPlayer {
 			if (me.getType() == RobotType.SOLDIER) {
 				try{
 					nearATK();
-					randMove(directions[rand.nextInt(8)]);
+//					randMove(directions[rand.nextInt(8)]);
+					if (Clock.getRoundNum() < me.getRoundLimit() - 400) {
+						moveTo(goodTowers[goodTowers.length - 1]);
+					} else {
+						moveTo(badTowers[badTowers.length - 1]);
+					}
 				} catch (Exception e) {
 					System.out.println("SOLDIER Exception");
 					e.printStackTrace();
@@ -303,286 +316,168 @@ public class RobotPlayer {
 		}
 	}
 	
-	static void mine(Direction hq, int r) throws GameActionException{
+	static void mine(int ids, Direction hq, int r, MapLocation gq) throws GameActionException{
 		if (me.senseOre(me.getLocation()) > 4) {
 			if (me.canMine() && me.isCoreReady()) {
 				me.mine();
 			}
-		} else if (hq == Direction.NORTH && me.isCoreReady()) {
-//			BadHQ is North of GoodHQ
-			if (r > 0 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else if (r < 1 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else if (r > 0 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else if (r < 1 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.EAST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
-				} else {
-					d = Direction.WEST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
-					}
+		} else {
+			double ore[] = new double[8];
+			Direction there = Direction.NONE, here = Direction.NONE;
+			double max = 0;
+			double orehere = 0;
+			for (int i = 0; i < 8; i++) {
+				ore[i] = me.senseOre(me.getLocation().add(directions[i]));
+				if (ore[i] > max) {
+					max = ore[i];
+					there = directions[i];
 				}
-				
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
+				if (me.getLocation().directionTo(gq).opposite() == directions[i]) {
+					orehere = ore[i];
 				}
 			}
-		} else if (hq == Direction.NORTH_EAST && me.isCoreReady()) {
-//			BadHQ is Northeast of GoodHQ
-			if (r > 0 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else if (r < 1 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else if (r > 0 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else if (r < 1 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.EAST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
+			Arrays.sort(ore);
+			
+			if (orehere == max && me.isCoreReady() && me.canMove(here)) {
+				me.move(here);
+			} else if (me.isCoreReady() && me.canMove(there) && max > ore[4] && max > 4) {
+				me.move(there);
+			} else if (hq == Direction.NORTH || hq == Direction.EAST || hq == Direction.SOUTH || hq == Direction.WEST) {
+//				BadHQ is North of GoodHQ
+				if (r > 0 && me.canMove(hq.rotateRight().rotateRight())) {
+					blockedMove(ids, hq.rotateRight().rotateRight());
+				} else if (r < 1 && me.canMove(hq.rotateLeft().rotateLeft())) {
+					blockedMove(ids, hq.rotateLeft().rotateLeft());
+				} else if (r > 0 && me.canMove(hq.rotateLeft().rotateLeft())) {
+					blockedMove(ids, hq.rotateLeft().rotateLeft());
+				} else if (r < 1 && me.canMove(hq.rotateRight().rotateRight())) {
+					blockedMove(ids, hq.rotateRight().rotateRight());
 				} else {
-					d = Direction.NORTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
+//					Rotate direction away from HQ
+					if (r > 0) {
+						blockedMove(ids, hq.rotateRight().rotateRight(), "right2");
+					} else {
+						blockedMove(ids, hq.rotateLeft().rotateLeft(), "left2");
 					}
 				}
-				
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
-				}
-			}
-		} else if (hq == Direction.EAST && me.isCoreReady()) {
-//			BadHQ is East of GoodHQ
-			if (r > 0 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else if (r < 1 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else if (r > 0 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else if (r < 1 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.SOUTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
+			} else if (hq == Direction.NORTH_EAST || hq == Direction.SOUTH_EAST || hq == Direction.SOUTH_WEST || hq == Direction.NORTH_WEST) {
+//				BadHQ is Northeast of GoodHQ
+				if (r > 0 && me.canMove(hq.rotateRight())) {
+					blockedMove(ids, hq.rotateRight());
+				} else if (r < 1 && me.canMove(hq.rotateLeft())) {
+					blockedMove(ids, hq.rotateLeft());
+				} else if (r > 0 && me.canMove(hq.rotateLeft())) {
+					blockedMove(ids, hq.rotateLeft());
+				} else if (r < 1 && me.canMove(hq.rotateRight())) {
+					blockedMove(ids, hq.rotateRight());
 				} else {
-					d = Direction.NORTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
+//					Rotate direction away from HQ
+					if (r > 0) {
+						blockedMove(ids, hq.rotateRight(), "right");
+					} else {
+						blockedMove(ids, hq.rotateLeft(), "left");
 					}
-				}
-					
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
-				}
-			}
-		} else if (hq == Direction.SOUTH_EAST && me.isCoreReady()) {
-//			BadHQ is SouthEast of GoodHQ
-			if (r > 0 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else if (r < 1 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else if (r > 0 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else if (r < 1 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.SOUTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
-				} else {
-					d = Direction.EAST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
-					}
-				}
-				
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
-				}
-			}
-		} else if (hq == Direction.SOUTH && me.isCoreReady()) {
-//			BadHQ is South of GoodHQ
-			if (r > 0 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else if (r < 1 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else if (r > 0 && me.canMove(Direction.EAST)) {
-				me.move(Direction.EAST);
-			} else if (r < 1 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.WEST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
-				} else {
-					d = Direction.EAST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
-					}
-				}
-				
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
-				}
-			}
-		} else if (hq == Direction.SOUTH_WEST && me.isCoreReady()) {
-//			BadHQ is Northeast of GoodHQ
-			if (r > 0 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else if (r < 1 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else if (r > 0 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else if (r < 1 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.WEST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
-				} else {
-					d = Direction.SOUTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
-					}
-				}
-				
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
-				}
-			}
-		} else if (hq == Direction.WEST && me.isCoreReady()) {
-//			BadHQ is Northeast of GoodHQ
-			if (r > 0 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else if (r < 1 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else if (r > 0 && me.canMove(Direction.SOUTH)) {
-				me.move(Direction.SOUTH);
-			} else if (r < 1 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.NORTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
-				} else {
-					d = Direction.SOUTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
-					}
-				}
-				
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
-				}
-			}
-		} else if (hq == Direction.NORTH_WEST && me.isCoreReady()) {
-//			BadHQ is Northeast of GoodHQ
-			if (r > 0 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else if (r < 1 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else if (r > 0 && me.canMove(Direction.WEST)) {
-				me.move(Direction.WEST);
-			} else if (r < 1 && me.canMove(Direction.NORTH)) {
-				me.move(Direction.NORTH);
-			} else {
-//				Rotate direction away from HQ
-				int counter = 0;
-				Direction d;
-				if (r > 0) {
-					d = Direction.WEST;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateRight();
-						counter++;
-					}
-				} else {
-					d = Direction.SOUTH;
-					while (counter < 8 && !me.canMove(d)) {
-						d = d.rotateLeft();
-						counter++;
-					}
-				}
-				
-				if (me.canMove(d) && me.isCoreReady()) {
-					me.move(d);
 				}
 			}
 		}
 	}
 	
-	static void HQMove(MapLocation bad) throws GameActionException {
+	static void blockedMove(int i, Direction target) throws GameActionException {
+		int counterl = 0, counterr = 0, m = me.readBroadcast(i), n = me.readBroadcast(i + 1);
+		if (m == 0) {
+			while (counterl < 8 && counterr < 8 && !me.canMove(target)) {
+				if (me.canMove(target.rotateLeft()) && me.canMove(target.rotateRight()) && counterl == counterr || !me.canMove(target.rotateLeft()) && !me.canMove(target.rotateRight()) && counterl == counterr ) {
+					switch (i % 2) {
+						case 0:
+							target = target.rotateLeft();
+							counterl++;
+							break;
+						case 1:
+							target = target.rotateRight();
+							counterr++;
+							break;
+						default:
+							target = null;
+					}
+				} else if (me.canMove(target.rotateLeft()) && counterl >= counterr) {
+					target = target.rotateLeft();
+					break;
+				} else if (me.canMove(target.rotateRight()) && counterr >= counterl) {
+					target = target.rotateRight();
+					break;
+				} else if (counterl > counterr) {
+					target = target.rotateLeft();
+				} else {
+					target = target.rotateRight();
+				}
+			}
+			
+			if (counterl < 8 && counterr < 8 && me.isCoreReady()) {
+				me.move(target);
+				me.broadcast(i + 1, direct(target));
+				if (counterl > 4 || counterr > 4) {
+					me.broadcast(i, 1);
+				}
+			}
+		} else {
+			TerrainTile tile = me.senseTerrainTile(me.getLocation().add(target));
+			if (tile == TerrainTile.VOID) {
+				randMove(directions[n]);
+			} else {
+				me.broadcast(i, 0);
+				blockedMove(i, target);
+			}
+		}
+	}
+	
+	static void blockedMove(int i, Direction target, String turn) throws GameActionException {
+		int counter = 0;
+		
+		switch (turn) {
+			case "left":
+				while (counter < 8 && !me.canMove(target)) {
+					target = target.rotateLeft();
+					counter++;
+				}
+				break;
+			case "right":
+				while (counter < 8 && !me.canMove(target)) {
+					target = target.rotateRight();
+					counter++;
+				}
+				break;
+			case "left2":
+				while (counter < 4 && !me.canMove(target)) {
+					target = target.rotateLeft().rotateLeft();
+					counter++;
+				}
+				break;
+			case "right2":
+				while (counter < 4 && !me.canMove(target)) {
+					target = target.rotateRight().rotateRight();
+					counter++;
+				}
+				break;
+		}
+		
+		if (counter < 8 && me.isCoreReady()) {
+			me.broadcast(i, direct(target));
+			me.move(target);
+		}
+	}
+	
+	static void HQMove(int i, MapLocation bad) throws GameActionException {
 //		System.out.println(Clock.getBytecodesLeft() + " Move start");
 		Direction toHQ = me.getLocation().directionTo(bad);
 //		System.out.println(Clock.getBytecodesLeft() + " get HQ direction");
 		
-		if (me.canMove(toHQ) && me.isCoreReady()) {
-	//		System.out.println(Clock.getBytecodesLeft() + " Check Move and ready");
-			me.move(toHQ);
-	//		System.out.println(Clock.getBytecodesLeft() + " Move complete");
-		}
+		blockedMove(i, toHQ);
 	}
 	
 	static void randMove(Direction d) throws GameActionException {
 		int counter = 0;
-		while (counter < 4 && !me.canMove(d)) {
-			d = d.rotateRight().rotateRight();
+		while (counter < 8 && !me.canMove(d)) {
+			d = d.rotateRight();
 			counter++;
 		}
 		if (me.isCoreReady()) {
@@ -617,14 +512,28 @@ public class RobotPlayer {
 		}
 	}
 	
+	static void beaverMove(int i, Direction d, MapLocation hq, Random r) throws GameActionException {
+		if (me.readBroadcast(20011) < 1 && me.getLocation() != hq.add(d.opposite())) {
+			randMove(me.getLocation().directionTo(hq.add(d.opposite())));
+		} else if (me.readBroadcast(20011) < 2 && me.getLocation() != hq.add(d.opposite()) && me.getTeamOre() >= 500) {
+			randMove(me.getLocation().directionTo(hq.add(d.opposite())));
+		} else if (me.readBroadcast(20013) < 3 && me.getLocation() != hq.add(d, 2) && me.getTeamOre() >= 300) {
+			randMove(me.getLocation().directionTo(hq.add(d, 2)));
+		} else {
+			randMove(directions[r.nextInt(8)]);
+		}
+	}
+	
 	static void tryBuild(Direction d, MapLocation hq) throws GameActionException {
 		int counter = 0;
 		RobotType type = RobotType.HQ;
-		if (me.readBroadcast(20011) < 2 && me.getTeamOre() >= 500) {
+		if (me.readBroadcast(20011) < 2 && me.getTeamOre() >= 500 && me.getLocation().directionTo(hq) == d) {
 			type = RobotType.MINERFACTORY;
 			d = d.opposite().rotateRight();
 		} else if (me.readBroadcast(20013) < 3 && me.getLocation().directionTo(hq) == d.opposite() && me.getTeamOre() >= 300) {
 			type = RobotType.BARRACKS;
+		} else if (me.readBroadcast(20011) >= 2 && me.readBroadcast(20013) >= 3 && me.getTeamOre() >= 100) { // Faulty. Builds too many blocks paths.
+			type = RobotType.SUPPLYDEPOT;
 		}
 		
 		if (type != RobotType.HQ && me.isCoreReady()) {
@@ -650,4 +559,44 @@ public class RobotPlayer {
 		}
 	}
 	
+	static void sortTowers(MapLocation towers[], MapLocation hq) throws GameActionException {
+//		System.out.println(Clock.getBytecodesLeft() + " Tower Sort start");
+		int a = towers.length;
+		int[] threat = new int[a];
+		threat[a - 1] = towers[a-1].distanceSquaredTo(hq);
+		
+//		Threat level
+		for (int i = 0; i < a - 1; i++) {
+			int distHQ = towers[i].distanceSquaredTo(hq);
+			for (int j = i + 1; j < a; j++) {
+				for (int k = 0; k < a; k++) {
+					if (i == k || j == k) {
+//						Distance between towers
+						threat[k] += towers[i].distanceSquaredTo(towers[j]);
+					}
+				}
+			}
+			
+			threat[i] += distHQ;
+		}
+		
+//		Threat sort
+		Arrays.sort(threat);
+	}
+	
+	static void moveTo(MapLocation m) throws GameActionException {
+		if (me.getLocation() != m) {
+			blockedMove(me.getID(), me.getLocation().directionTo(m));
+		}
+	}
+	
+	static int direct(Direction d) throws GameActionException {
+		int a = 0;
+		for (int i = 0; i < 8; i++) {
+			if (directions[i] == d) {
+				a = i;
+			}
+		}
+		return a;
+	}
 }
