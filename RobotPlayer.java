@@ -108,9 +108,9 @@ public class RobotPlayer {
 					nearATK();
 //					randMove(directions[rand.nextInt(8)]);
 					if (Clock.getRoundNum() < me.getRoundLimit() - 400) {
-						moveTo(goodTowers[goodTowers.length - 1]);
+						moveTo(goodTowers[goodTowers.length - 1], goodHQ);
 					} else {
-						moveTo(badTowers[badTowers.length - 1]);
+						moveTo(badTowers[badTowers.length - 1], goodHQ);
 					}
 				} catch (Exception e) {
 					System.out.println("SOLDIER Exception");
@@ -345,44 +345,44 @@ public class RobotPlayer {
 			} else if (hq == Direction.NORTH || hq == Direction.EAST || hq == Direction.SOUTH || hq == Direction.WEST) {
 //				BadHQ is North of GoodHQ
 				if (r > 0 && me.canMove(hq.rotateRight().rotateRight())) {
-					blockedMove(ids, hq.rotateRight().rotateRight());
+					blockedMove(ids, hq.rotateRight().rotateRight(), gq);
 				} else if (r < 1 && me.canMove(hq.rotateLeft().rotateLeft())) {
-					blockedMove(ids, hq.rotateLeft().rotateLeft());
+					blockedMove(ids, hq.rotateLeft().rotateLeft(), gq);
 				} else if (r > 0 && me.canMove(hq.rotateLeft().rotateLeft())) {
-					blockedMove(ids, hq.rotateLeft().rotateLeft());
+					blockedMove(ids, hq.rotateLeft().rotateLeft(), gq);
 				} else if (r < 1 && me.canMove(hq.rotateRight().rotateRight())) {
-					blockedMove(ids, hq.rotateRight().rotateRight());
+					blockedMove(ids, hq.rotateRight().rotateRight(), gq);
 				} else {
 //					Rotate direction away from HQ
 					if (r > 0) {
-						blockedMove(ids, hq.rotateRight().rotateRight(), "right2");
+						blockedMove(ids, hq.rotateRight().rotateRight(), "right2", gq);
 					} else {
-						blockedMove(ids, hq.rotateLeft().rotateLeft(), "left2");
+						blockedMove(ids, hq.rotateLeft().rotateLeft(), "left2", gq);
 					}
 				}
 			} else if (hq == Direction.NORTH_EAST || hq == Direction.SOUTH_EAST || hq == Direction.SOUTH_WEST || hq == Direction.NORTH_WEST) {
 //				BadHQ is Northeast of GoodHQ
 				if (r > 0 && me.canMove(hq.rotateRight())) {
-					blockedMove(ids, hq.rotateRight());
+					blockedMove(ids, hq.rotateRight(), gq);
 				} else if (r < 1 && me.canMove(hq.rotateLeft())) {
-					blockedMove(ids, hq.rotateLeft());
+					blockedMove(ids, hq.rotateLeft(), gq);
 				} else if (r > 0 && me.canMove(hq.rotateLeft())) {
-					blockedMove(ids, hq.rotateLeft());
+					blockedMove(ids, hq.rotateLeft(), gq);
 				} else if (r < 1 && me.canMove(hq.rotateRight())) {
-					blockedMove(ids, hq.rotateRight());
+					blockedMove(ids, hq.rotateRight(), gq);
 				} else {
 //					Rotate direction away from HQ
 					if (r > 0) {
-						blockedMove(ids, hq.rotateRight(), "right");
+						blockedMove(ids, hq.rotateRight(), "right", gq);
 					} else {
-						blockedMove(ids, hq.rotateLeft(), "left");
+						blockedMove(ids, hq.rotateLeft(), "left", gq);
 					}
 				}
 			}
 		}
 	}
 	
-	static void blockedMove(int i, Direction target) throws GameActionException {
+	static void blockedMove(int i, Direction target, MapLocation hq) throws GameActionException {
 		int counterl = 0, counterr = 0, m = me.readBroadcast(i), n = me.readBroadcast(i + 1);
 		if (m == 0) {
 			while (counterl < 8 && counterr < 8 && !me.canMove(target)) {
@@ -420,20 +420,28 @@ public class RobotPlayer {
 				}
 			}
 		} else {
-			TerrainTile tile = me.senseTerrainTile(me.getLocation().add(target));
+			TerrainTile tile;
+			if (me.getLocation().add(target.rotateLeft().rotateLeft()).distanceSquaredTo(hq) > me.getLocation().add(target.rotateRight().rotateRight()).distanceSquaredTo(hq)) {
+				target = target.rotateLeft().rotateLeft();
+				tile = me.senseTerrainTile(me.getLocation().add(target));
+			} else {
+				target = target.rotateRight().rotateRight();
+				tile = me.senseTerrainTile(me.getLocation().add(target));
+			}
 			if (tile == TerrainTile.VOID) {
 				randMove(directions[n]);
-			} else {
+			} else if (tile == TerrainTile.NORMAL) {
 				me.broadcast(i, 0);
-				blockedMove(i, target);
+				blockedMove(i, target, hq);
 			}
 		}
 	}
 	
-	static void blockedMove(int i, Direction target, String turn) throws GameActionException {
-		int counter = 0;
+	static void blockedMove(int i, Direction target, String turn, MapLocation hq) throws GameActionException {
+		int counter = 0, m = me.readBroadcast(i), n = me.readBroadcast(i + 1);
 		
-		switch (turn) {
+		if (m == 0) {
+			switch (turn) {
 			case "left":
 				while (counter < 8 && !me.canMove(target)) {
 					target = target.rotateLeft();
@@ -458,20 +466,37 @@ public class RobotPlayer {
 					counter++;
 				}
 				break;
+			}
+			
+			if (counter < 8 && me.isCoreReady()) {
+				me.broadcast(i + 1, direct(target));
+				me.move(target);
+			}
+		} else {
+			TerrainTile tile;
+			if (me.getLocation().add(target.rotateLeft().rotateLeft()).distanceSquaredTo(hq) > me.getLocation().add(target.rotateRight().rotateRight()).distanceSquaredTo(hq)) {
+				target = target.rotateLeft().rotateLeft();
+				tile = me.senseTerrainTile(me.getLocation().add(target));
+			} else {
+				target = target.rotateRight().rotateRight();
+				tile = me.senseTerrainTile(me.getLocation().add(target));
+			}
+			if (tile == TerrainTile.VOID) {
+				randMove(directions[n]);
+			} else if (tile == TerrainTile.NORMAL) {
+				me.broadcast(i, 0);
+				blockedMove(i, target, hq);
+			}
 		}
 		
-		if (counter < 8 && me.isCoreReady()) {
-			me.broadcast(i, direct(target));
-			me.move(target);
-		}
 	}
 	
-	static void HQMove(int i, MapLocation bad) throws GameActionException {
+	static void HQMove(int i, MapLocation bad, MapLocation good) throws GameActionException {
 //		System.out.println(Clock.getBytecodesLeft() + " Move start");
 		Direction toHQ = me.getLocation().directionTo(bad);
 //		System.out.println(Clock.getBytecodesLeft() + " get HQ direction");
 		
-		blockedMove(i, toHQ);
+		blockedMove(i, toHQ, good);
 	}
 	
 	static void randMove(Direction d) throws GameActionException {
@@ -584,9 +609,9 @@ public class RobotPlayer {
 		Arrays.sort(threat);
 	}
 	
-	static void moveTo(MapLocation m) throws GameActionException {
+	static void moveTo(MapLocation m, MapLocation hq) throws GameActionException {
 		if (me.getLocation() != m) {
-			blockedMove(me.getID(), me.getLocation().directionTo(m));
+			blockedMove(me.getID(), me.getLocation().directionTo(m), hq);
 		}
 	}
 	
